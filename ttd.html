@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Kirim dari ponsel</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font:16px/1.5 system-ui,"Segoe UI",Arial,sans-serif;background:#f6f7f8;color:#1f2937;padding:16px;overscroll-behavior:contain}
+h1{font-size:18px;margin:0 0 4px}p{margin:0 0 12px;color:#6b7280;font-size:14px}
+#pad{width:100%;height:260px;border:2px dashed #9ca3af;border-radius:12px;background:#fff;touch-action:none;display:block;cursor:crosshair}
+.row{display:flex;gap:10px;margin-top:14px}button,label.b{flex:1;height:46px;border-radius:10px;border:1px solid #3f5f7f;background:#fff;color:#3f5f7f;font:inherit;font-weight:600;display:flex;align-items:center;justify-content:center}
+button.p{background:#3f5f7f;color:#fff}button:disabled{opacity:.5}#m{margin-top:14px;font-weight:600}.ok{color:#2f6b45}.er{color:#b4443a}
+#pv{max-width:100%;max-height:300px;display:block;margin:0 auto;border-radius:8px}
+</style></head><body>
+<h1 id="jd">Kirim dari ponsel</h1>
+<p id="ket"></p>
+<div id="box" hidden>
+  <div id="boxT" hidden><canvas id="pad"></canvas>
+    <div class="row"><button id="u" type="button">Ulangi</button><button id="k" class="p" type="button">Kirim</button></div></div>
+  <div id="boxF" hidden><img id="pv" alt="" hidden>
+    <div class="row"><label class="b" id="lf">Ambil / pilih foto<input id="fi" type="file" accept="image/*" hidden></label><button id="kf" class="p" type="button" disabled>Kirim</button></div></div>
+</div>
+<div id="m"></div>
+<noscript><p>Halaman ini membutuhkan JavaScript.</p></noscript>
+<script>
+(function () {
+  var T = new URLSearchParams(location.search).get('t');
+  var m = document.getElementById('m'), box = document.getElementById('box');
+  function msg(t, cls) { m.textContent = t; m.className = cls || ''; }
+  function gagal(t) { box.hidden = true; msg(t, 'er'); }
+  var API = '';
+  function post(fn, args) {
+    // text/plain: permintaan sederhana tanpa preflight, sama dengan yang dipakai aplikasi utama
+    return fetch(API, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ fn: fn, args: args }) })
+      .then(function (r) { return r.json(); })
+      .then(function (r) { if (!r || !r.ok) throw new Error((r && r.error) || 'Gagal'); return r.data; });
+  }
+  function selesai(d, kirimUlang) {
+    if (d && d.success) { box.hidden = true; msg('Terkirim. Anda boleh menutup halaman ini.', 'ok'); return; }
+    kirimUlang(); msg((d && d.message) || 'Gagal mengirim.', 'er');
+  }
+
+  // ---------- tanda tangan ----------
+  function modeTtd() {
+    document.getElementById('jd').textContent = 'Tanda tangan';
+    document.getElementById('ket').textContent = 'Tanda tangani di kotak dengan jari, lalu tekan Kirim.';
+    document.getElementById('boxT').hidden = false;
+    var c = document.getElementById('pad'), x = c.getContext('2d'), k = document.getElementById('k');
+    var W = Math.min(1500, Math.round(c.getBoundingClientRect().width * 3)) || 900, H = Math.round(W * 0.58);
+    c.width = W; c.height = H; x.lineCap = 'round'; x.lineJoin = 'round'; x.strokeStyle = '#000'; x.imageSmoothingQuality = 'high';
+    var d = false, n = 0, P = null, M = null, LW = 0, BASE = W / 115;
+    function pt(e) { var r = c.getBoundingClientRect(); return [(e.clientX - r.left) * c.width / r.width, (e.clientY - r.top) * c.height / r.height, e.timeStamp || Date.now()]; }
+    function seg(a) {
+      var mm = [(P[0] + a[0]) / 2, (P[1] + a[1]) / 2], dt = Math.max(1, a[2] - P[2]), v = Math.hypot(a[0] - P[0], a[1] - P[1]) / dt;
+      var w = Math.max(BASE * 0.55, Math.min(BASE * 1.5, BASE * 1.6 / (1 + v * 1.1))); LW = LW ? LW * 0.7 + w * 0.3 : w;
+      x.lineWidth = LW; x.beginPath(); x.moveTo(M[0], M[1]); x.quadraticCurveTo(P[0], P[1], mm[0], mm[1]); x.stroke(); P = a; M = mm;
+    }
+    c.addEventListener('pointerdown', function (e) { e.preventDefault(); d = true; n++; try { c.setPointerCapture(e.pointerId); } catch (_) { } var a = pt(e); P = M = a; LW = 0; x.fillStyle = '#000'; x.beginPath(); x.arc(a[0], a[1], BASE * 0.6, 0, 7); x.fill(); });
+    c.addEventListener('pointermove', function (e) { if (!d) return; e.preventDefault(); var ev = e.getCoalescedEvents ? e.getCoalescedEvents() : [e]; if (!ev.length) ev = [e]; for (var i = 0; i < ev.length; i++) seg(pt(ev[i])); });
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach(function (ev) { c.addEventListener(ev, function () { if (d && P) { x.lineWidth = LW || BASE; x.beginPath(); x.moveTo(M[0], M[1]); x.lineTo(P[0], P[1]); x.stroke(); } d = false; P = null; }); });
+    document.getElementById('u').onclick = function () { x.clearRect(0, 0, c.width, c.height); n = 0; msg(''); };
+    function crop() {
+      var w = c.width, h = c.height, D = x.getImageData(0, 0, w, h).data, a = w, b = h, r = 0, t = 0, i, j;
+      for (j = 0; j < h; j++) for (i = 0; i < w; i++) if (D[(j * w + i) * 4 + 3] > 20) { if (i < a) a = i; if (i > r) r = i; if (j < b) b = j; if (j > t) t = j; }
+      a = Math.max(0, a - 8); b = Math.max(0, b - 8); r = Math.min(w - 1, r + 8); t = Math.min(h - 1, t + 8);
+      var o = document.createElement('canvas'); o.width = r - a + 1; o.height = t - b + 1; o.getContext('2d').drawImage(c, a, b, o.width, o.height, 0, 0, o.width, o.height); return o;
+    }
+    k.onclick = function () {
+      if (!n) return msg('Tanda tangani dulu.', 'er');
+      var o = crop(), s = o.toDataURL('image/png');
+      while (s.length > 85000) { var z = document.createElement('canvas'); z.width = Math.round(o.width * .9); z.height = Math.round(o.height * .9); var zc = z.getContext('2d'); zc.imageSmoothingQuality = 'high'; zc.drawImage(o, 0, 0, z.width, z.height); o = z; s = o.toDataURL('image/png'); }
+      k.disabled = true; msg('Mengirim…');
+      post('ttdPonselKirim', [T, s]).then(function (r) { selesai(r, function () { k.disabled = false; }); })
+        .catch(function () { k.disabled = false; msg('Gagal mengirim. Periksa sinyal lalu coba lagi.', 'er'); });
+    };
+  }
+
+  // ---------- foto ----------
+  function modeFoto() {
+    document.getElementById('jd').textContent = 'Kirim foto';
+    document.getElementById('ket').textContent = 'Ambil foto dengan kamera atau pilih dari galeri, lalu tekan Kirim.';
+    document.getElementById('boxF').hidden = false;
+    var fi = document.getElementById('fi'), pv = document.getElementById('pv'), kf = document.getElementById('kf'), data = '';
+    // perkecil bertahap sampai muat batas server (~90 KB teks)
+    function kecil(img) {
+      var s = 640, q = 0.8, out = '';
+      for (var i = 0; i < 12; i++) {
+        var r = Math.min(1, s / Math.max(img.width, img.height)), cv = document.createElement('canvas');
+        cv.width = Math.max(1, Math.round(img.width * r)); cv.height = Math.max(1, Math.round(img.height * r));
+        cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+        out = cv.toDataURL('image/jpeg', q);
+        if (out.length <= 85000) return out;
+        if (q > 0.5) q -= 0.1; else s = Math.round(s * 0.85);
+      }
+      return '';
+    }
+    fi.onchange = function () {
+      var f = fi.files && fi.files[0]; if (!f) return; msg('');
+      var u = URL.createObjectURL(f), img = new Image();
+      img.onload = function () {
+        data = kecil(img); URL.revokeObjectURL(u);
+        if (!data) { kf.disabled = true; return msg('Foto tidak bisa diproses.', 'er'); }
+        pv.src = data; pv.hidden = false; kf.disabled = false;
+      };
+      img.onerror = function () { msg('Berkas bukan gambar yang valid.', 'er'); };
+      img.src = u;
+    };
+    kf.onclick = function () {
+      if (!data) return;
+      kf.disabled = true; msg('Mengirim…');
+      post('ttdPonselKirim', [T, data]).then(function (r) { selesai(r, function () { kf.disabled = false; }); })
+        .catch(function () { kf.disabled = false; msg('Gagal mengirim. Periksa sinyal lalu coba lagi.', 'er'); });
+    };
+  }
+
+  if (!T) return gagal('Tautan tidak lengkap. Minta tautan baru dari petugas.');
+  fetch('./config.json').then(function (r) { return r.json(); }).then(function (cfg) {
+    API = cfg.apiUrl;
+    return post('ttdPonselAda', [T]);
+  }).then(function (r) {
+    if (r.status === 'expired') return gagal('Tautan sudah kedaluwarsa. Minta tautan baru dari petugas.');
+    if (r.status === 'used') return gagal('Tautan ini sudah dipakai. Minta tautan baru bila perlu.');
+    box.hidden = false;
+    if (r.jenis === 'foto') modeFoto(); else modeTtd();
+  }).catch(function () { gagal('Tidak dapat menghubungi server. Periksa sinyal lalu muat ulang halaman.'); });
+})();
+</script></body></html>
