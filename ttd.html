@@ -14,8 +14,17 @@ button.p{background:#3f5f7f;color:#fff}button:disabled{opacity:.5}#m{margin-top:
 <div id="box" hidden>
   <div id="boxT" hidden><canvas id="pad"></canvas>
     <div class="row"><button id="u" type="button">Ulangi</button><button id="k" class="p" type="button">Kirim</button></div></div>
-  <div id="boxF" hidden><img id="pv" alt="" hidden>
-    <div class="row"><label class="b" id="lf">Ambil / pilih foto<input id="fi" type="file" accept="image/*" hidden></label><button id="kf" class="p" type="button" disabled>Kirim</button></div></div>
+  <div id="boxF" hidden>
+    <div id="pilih" class="row"><label class="b">Ambil dengan kamera<input id="fc" type="file" accept="image/*" capture="environment" hidden></label><label class="b">Pilih dari galeri<input id="fi" type="file" accept="image/*" hidden></label></div>
+    <div id="cropBox" hidden>
+      <canvas id="cv" style="width:100%;max-width:300px;aspect-ratio:3/4;display:block;margin:0 auto;border:2px solid #3f5f7f;border-radius:10px;background:#fff;touch-action:none"></canvas>
+      <p style="margin:8px 0 0;text-align:center">Geser foto untuk mengatur posisi, gunakan slider untuk memperbesar.</p>
+      <input id="zm" type="range" min="1" max="4" step="0.01" value="1" style="width:100%;max-width:300px;display:block;margin:6px auto 0">
+      <div class="row"><button id="ul" type="button">Foto lain</button><button id="pakai" class="p" type="button">Potong &amp; gunakan</button></div>
+    </div>
+    <div id="hasil" hidden><img id="pv" alt="">
+      <div class="row"><button id="ul2" type="button">Foto lain</button><button id="kf" class="p" type="button" disabled>Kirim</button></div></div>
+  </div>
 </div>
 <div id="m"></div>
 <noscript><p>Halaman ini membutuhkan JavaScript.</p></noscript>
@@ -77,6 +86,7 @@ button.p{background:#3f5f7f;color:#fff}button:disabled{opacity:.5}#m{margin-top:
     document.getElementById('jd').textContent = 'Kirim foto';
     document.getElementById('ket').textContent = 'Ambil foto dengan kamera atau pilih dari galeri, lalu tekan Kirim.';
     document.getElementById('boxF').hidden = false;
+    document.getElementById('ket').textContent = 'Ambil foto dengan kamera atau pilih dari galeri, atur posisi, lalu kirim.';
     var fi = document.getElementById('fi'), pv = document.getElementById('pv'), kf = document.getElementById('kf'), data = '';
     // perkecil bertahap sampai muat batas server (~90 KB teks)
     function kecil(img) {
@@ -91,17 +101,49 @@ button.p{background:#3f5f7f;color:#fff}button:disabled{opacity:.5}#m{margin-top:
       }
       return '';
     }
-    fi.onchange = function () {
-      var f = fi.files && fi.files[0]; if (!f) return; msg('');
+    // ---- potong: bingkai 3:4, geser + perbesar ----
+    var fc = document.getElementById('fc'), cv = document.getElementById('cv'), zm = document.getElementById('zm');
+    var cropBox = document.getElementById('cropBox'), pilih = document.getElementById('pilih'), hasil = document.getElementById('hasil');
+    var CW = 600, CH = 800, cx = cv.getContext('2d'), IMG = null, sc = 1, ox = 0, oy = 0, base = 1;
+    cv.width = CW; cv.height = CH;
+    function batas() { // jaga agar bingkai selalu tertutup foto
+      var w = IMG.width * sc, h = IMG.height * sc;
+      ox = Math.min(0, Math.max(CW - w, ox)); oy = Math.min(0, Math.max(CH - h, oy));
+    }
+    function gambar() { cx.fillStyle = '#fff'; cx.fillRect(0, 0, CW, CH); cx.drawImage(IMG, ox, oy, IMG.width * sc, IMG.height * sc); }
+    function mulaiCrop(img) {
+      IMG = img; base = Math.max(CW / img.width, CH / img.height); sc = base; zm.value = 1;
+      ox = (CW - img.width * sc) / 2; oy = (CH - img.height * sc) / 2; batas(); gambar();
+      pilih.hidden = true; hasil.hidden = true; cropBox.hidden = false;
+    }
+    zm.oninput = function () {
+      var cxm = CW / 2, cym = CH / 2, lama = sc; sc = base * parseFloat(zm.value);
+      ox = cxm - (cxm - ox) * sc / lama; oy = cym - (cym - oy) * sc / lama; batas(); gambar();
+    };
+    var tg = false, px = 0, py = 0;
+    cv.addEventListener('pointerdown', function (e) { tg = true; px = e.clientX; py = e.clientY; try { cv.setPointerCapture(e.pointerId); } catch (_) { } });
+    cv.addEventListener('pointermove', function (e) {
+      if (!tg || !IMG) return; var r = cv.getBoundingClientRect(), k = CW / r.width;
+      ox += (e.clientX - px) * k; oy += (e.clientY - py) * k; px = e.clientX; py = e.clientY; batas(); gambar();
+    });
+    ['pointerup', 'pointercancel'].forEach(function (ev) { cv.addEventListener(ev, function () { tg = false; }); });
+    function ulang() { cropBox.hidden = true; hasil.hidden = true; pilih.hidden = false; data = ''; kf.disabled = true; msg(''); fi.value = ''; fc.value = ''; }
+    document.getElementById('ul').onclick = ulang;
+    document.getElementById('ul2').onclick = ulang;
+    document.getElementById('pakai').onclick = function () {
+      var o = document.createElement('canvas'); o.width = CW; o.height = CH; o.getContext('2d').drawImage(cv, 0, 0);
+      data = kecil(o);
+      if (!data) return msg('Foto tidak bisa diproses.', 'er');
+      pv.src = data; cropBox.hidden = true; hasil.hidden = false; kf.disabled = false; msg('Ukuran foto sudah dikecilkan otomatis.', 'ok');
+    };
+    function terima() {
+      var f = this.files && this.files[0]; if (!f) return; msg('');
       var u = URL.createObjectURL(f), img = new Image();
-      img.onload = function () {
-        data = kecil(img); URL.revokeObjectURL(u);
-        if (!data) { kf.disabled = true; return msg('Foto tidak bisa diproses.', 'er'); }
-        pv.src = data; pv.hidden = false; kf.disabled = false;
-      };
+      img.onload = function () { URL.revokeObjectURL(u); mulaiCrop(img); };
       img.onerror = function () { msg('Berkas bukan gambar yang valid.', 'er'); };
       img.src = u;
-    };
+    }
+    fi.onchange = terima; fc.onchange = terima;
     kf.onclick = function () {
       if (!data) return;
       kf.disabled = true; msg('Mengirim…');
